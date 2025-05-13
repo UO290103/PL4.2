@@ -246,7 +246,8 @@ public class MainActivity extends AppCompatActivity{
             // Actualiza la posición del usuario
             mUser.lati = longi;
             mUser.longi = lati;
-
+            Toast.makeText(MainActivity.this,"Latitud: "+String.valueOf(mUser.lati),Toast.LENGTH_SHORT).show();
+            Toast.makeText(MainActivity.this,"Longitud: "+String.valueOf(mUser.longi),Toast.LENGTH_SHORT).show();
             // Envía la nueva posición al backend
             new SendLocationTask().execute(AMIGOS_URL);
         }
