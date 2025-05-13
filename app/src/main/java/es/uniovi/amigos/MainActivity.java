@@ -48,12 +48,12 @@ public class MainActivity extends AppCompatActivity{
     private final int REQUEST_PERMISSIONS_REQUEST_CODE = 1;
     private MapView map = null;  // Este atributo guarda una referencia al objeto MapView
     // a través del cual podremos manipular el mapa que se muestre
-    private List<Amigo> amigos; //Lista donde guardamos la info de los amigos
     private String AMIGOS_URL = "https://man-assuring-possibly.ngrok-free.app/api/amigo";
     //URL estatica dada por ngrok con la que accedemos al servicio API rest de los amigos
     private Amigo mUser = new Amigo(0,"user",0.0,0.0);
-    private boolean userNameSet = false;
+    //Información del usuario guardada
     private boolean isUserCreated = false;
+    //booleano que nos indica si el usuario ya fue creado o no
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -77,9 +77,13 @@ public class MainActivity extends AppCompatActivity{
 
         //Centramos el mapa en Europa
         centerMapOnEurope();
+        //Tarea asincrona para obtener la lista de amigos
         new ShowAmigosTask().execute(AMIGOS_URL);
         //Obtenemos el nombre del usuario
         askUserName();
+        //Iniciamos timer para el polling
+        Timer timer = new Timer();
+        timer.scheduleAtFixedRate(new UpdateAmigoPosition(), 0, 5000);
     }
 
     @Override
@@ -129,7 +133,7 @@ public class MainActivity extends AppCompatActivity{
                     REQUEST_PERMISSIONS_REQUEST_CODE);
         }
     }
-
+    //Metodo que centra el mapa en unas coordenadas especificas
     void centerMapOnEurope() {
         // Esta función mueve el centro del mapa a Paris y ajusta el zoom
         // para que se vea Europa
@@ -138,7 +142,7 @@ public class MainActivity extends AppCompatActivity{
         GeoPoint startPoint = new GeoPoint(48.8583, 2.2944);
         mapController.setCenter(startPoint);
     }
-
+    //Metodo que añade un marcador al mapa en la posicion indicada
     private void addMarker(double latitud, double longitud, String name) {
         GeoPoint coords = new GeoPoint(latitud, longitud);
         Marker startMarker = new Marker(map);
@@ -147,56 +151,49 @@ public class MainActivity extends AppCompatActivity{
         startMarker.setTitle(name);
         map.getOverlays().add(startMarker);
     }
-
+    //Metodo que teniendo una lista de Objetos amigo añade un marcador al mapa con la ubicacion
+    //cada uno
     private void addListToMap(List<Amigo> amigoList){
+        //Limpiamos el mapa de los marcadores anteriores
         map.getOverlays().clear();
+        //Recorremos la lista y añadimos el marcador de cada amigo
         for(int i=0;i<amigoList.size();i++){
             var amigo = amigoList.get(i);
             addMarker(amigo.lati,amigo.longi,amigo.name);
         }
+        //Simulamos un scroll para que actualice el mapa
         map.getController().scrollBy(0,0);
     }
 
     public void askUserName() {
-        if (userNameSet) return;  // ⛔ Ya lo pidió
-
-        userNameSet = true;  // ✅ Marcar como mostrado
-
         AlertDialog.Builder alert = new AlertDialog.Builder(this);
 
         alert.setTitle("Settings");
         alert.setMessage("User name:");
 
+        // Crear un EditText para obtener el nombre
         final EditText input = new EditText(this);
         alert.setView(input);
 
         alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int whichButton) {
                 mUser.name = input.getText().toString();
-
-                // Aseguramos que no se reinicie el flag por error
-                userNameSet = true;
-                Toast.makeText(MainActivity.this,"Tu nombre de usuario es:"+mUser.name,Toast.LENGTH_SHORT).show();
-                // Iniciar el timer solo después de tener el nombre
-                Timer timer = new Timer();
-                timer.scheduleAtFixedRate(new UpdateAmigoPosition(), 0, 5000);
+                Toast.makeText(MainActivity.this,"Tu nombre de usuario: "+mUser.name,Toast.LENGTH_SHORT).show();
+                //Creamos el Listener del GPS cuando ya tenemos nombre
                 SetupLocation();
             }
         });
 
         alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int whichButton) {
-                Toast.makeText(MainActivity.this, "Se necesita un nombre de usuario", Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this,"Se necesita nombre de usuario",Toast.LENGTH_SHORT).show();
                 finish();
             }
         });
 
-        alert.setCancelable(false);
         alert.show();
     }
-
-
-
+    //Metodo que crea un Listener de la ubicación y notifica cuando ha cambiado al menos 10 metros
     void SetupLocation() {
         if (ActivityCompat.checkSelfPermission(this,
                 android.Manifest.permission.ACCESS_FINE_LOCATION)
@@ -209,12 +206,9 @@ public class MainActivity extends AppCompatActivity{
             // no hacemos nada
             return;
         }
-
-
         // Se debe adquirir una referencia al Location Manager del sistema
         LocationManager locationManager =
                 (LocationManager) this.getSystemService(Context.LOCATION_SERVICE);
-
         // Se obtiene el mejor provider de posición
         Criteria criteria = new Criteria();
         String  provider = locationManager.getBestProvider(criteria, false);
@@ -239,14 +233,12 @@ public class MainActivity extends AppCompatActivity{
     class MyLocationListener implements LocationListener {
         @Override
         public void onLocationChanged(Location location) {
+            //Obtenemos las nuevas latidud y longitud
             double lati = location.getLatitude();
             double longi = location.getLongitude();
-
             // Actualiza la posición del usuario
             mUser.lati = lati;
             mUser.longi = longi;
-            Toast.makeText(MainActivity.this,"Latitud: "+String.valueOf(mUser.lati),Toast.LENGTH_SHORT).show();
-            Toast.makeText(MainActivity.this,"Longitud: "+String.valueOf(mUser.longi),Toast.LENGTH_SHORT).show();
             // Envía la nueva posición al backend
             new SendLocationTask().execute(AMIGOS_URL);
         }
@@ -261,7 +253,18 @@ public class MainActivity extends AppCompatActivity{
         @Override
         public void onProviderDisabled(String provider) {}
     }
+
+    //Metodo para parsear el InputStream de la respuesta a String
+    private String readStream(InputStream stream) throws IOException {
+        BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = reader.readLine()) != null) sb.append(line);
+        return sb.toString();
+    }
+
     class ShowAmigosTask extends AsyncTask<String, Void, List<Amigo>> {
+        //doInBackground de ShowAmigosTask, manda una petición GET a la API y recibe una lista de Amigos
         @Override
         protected List<Amigo> doInBackground(String... urls) {
             try {
@@ -272,17 +275,16 @@ public class MainActivity extends AppCompatActivity{
                 return null;
             }
         }
-
+        //onPostExecute de ShowAmigosTask, actualiza el mapa con los amigos recibidos por el GET
         @Override
         protected void onPostExecute(List<Amigo> amigoList) {
             if (amigoList != null) {
-                amigos = amigoList;
-                addListToMap(amigos);
+                addListToMap(amigoList);
             } else {
                 Toast.makeText(MainActivity.this, "Error al recibir lista amigos", Toast.LENGTH_SHORT).show();
             }
         }
-
+        //Metodo que hace peticion GET a la API
         private InputStream openUrl(String urlString) throws IOException {
             URL url = new URL(urlString);
             HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -293,30 +295,23 @@ public class MainActivity extends AppCompatActivity{
             conn.connect();
             return conn.getInputStream();
         }
-
-        private String readStream(InputStream stream) throws IOException {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line);
-            return sb.toString();
-        }
-
+        //Metodo que devuelve una lista de objetos Amigo dada por la API
         private List<Amigo> parseDataFromNetwork(String data)
                 throws IOException, JSONException {
-
+            //Iniciamos la lista vacia
             List<Amigo> amigosList = new ArrayList<Amigo>();
-
+            //Creamos el array de JSONObjects con la respuesta de la API
             JSONArray amigos = new JSONArray(data);
-
+            //Recorremos el array por cada amigo
             for(int i = 0; i < amigos.length(); i++) {
+                //Obtenemos el JSONObject correspondiente a la posicion
                 JSONObject amigoObject = amigos.getJSONObject(i);
-
+                //Obtenemos el string de cada parametro
                 String id = amigoObject.getString("id");
                 String name = amigoObject.getString("name");
                 String longi = amigoObject.getString("longi");
                 String lati = amigoObject.getString("lati");
-
+                //Parseamos los numeros al tipo correspondiente
                 int ID;
                 double longiNumber;
                 double latiNumber;
@@ -327,20 +322,23 @@ public class MainActivity extends AppCompatActivity{
                 } catch (NumberFormatException nfe) {
                     continue;
                 }
-
+                //Creamos y añadimos el objeto Amigo a la lista
                 amigosList.add(new Amigo(ID,name,longiNumber,latiNumber));
             }
-
+            //Tras acabar el bucle retornamos la lista de Amigos
             return amigosList;
         }
     }
+    //Clase llamada cuando salta el timer del polling
     class UpdateAmigoPosition extends TimerTask {
         public void run() {
+            //Cuando salta el timer actualizamos el mapa
             new ShowAmigosTask().execute(AMIGOS_URL);
         }
     }
-
+    //Clase para la tarea asincrona de actualizar la información de posición del usuario
     class SendLocationTask extends AsyncTask<String, Void, Amigo>{
+        //doInBackground de SendLocationTask, manda petición POST o PUT a la api
         @Override
         protected Amigo doInBackground(String... urls) {
             try {
@@ -351,6 +349,7 @@ public class MainActivity extends AppCompatActivity{
                 return null;
             }
         }
+        //onPostExecute de SendLocationTask, actualiza el user con el recibido como respuesta
         @Override
         protected void onPostExecute(Amigo user) {
             if (user != null) {
@@ -359,31 +358,35 @@ public class MainActivity extends AppCompatActivity{
                 Toast.makeText(MainActivity.this, "Error al actualizar tu información", Toast.LENGTH_SHORT).show();
             }
         }
-        private String readStream(InputStream stream) throws IOException {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(stream));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = reader.readLine()) != null) sb.append(line);
-            return sb.toString();
-        }
+        //Metodo con el que mandaremos las peticiones POST o PUT para el envio de informacion de nuestro usuario
         protected InputStream updateAmigo(String URL, Amigo User) throws IOException, JSONException {
+            //Obtenemos la URL final
             String api_url = URL;
+            //Ponemos PUT como metodo estatico
             String metodo = "PUT";
+            //Inicialiamos el JSONObject para el body
             JSONObject jsonObject = new JSONObject();
+            //Si ya se ha mandado petición POST y hemos recibido el usuario
             if (User.ID != 0 && isUserCreated) {
+                //Introducimos el id en el body ya que lo necesita el metodo PUT de la API
                 jsonObject.put("id", User.ID);
+                //Introducimos tambien el id en la URL
                 String id = String.valueOf(User.ID);
                 api_url = URL + "/" + id;
+            //Todavia no se ha mandado el POST inicial
             } else if(!isUserCreated){
+                //Cambiamos el metodo de la peticion a POST e indicamos que ya se ha mandado
                 metodo = "POST";
                 isUserCreated = true;
             }
+            //Introducimos el resto de parametros al Body
             jsonObject.put("name", User.name);
             jsonObject.put("lati", User.lati.toString());
             jsonObject.put("longi", User.longi.toString());
-
+            //Parseamos el JSONObject a String
             String jObjSent = jsonObject.toString();
 
+            //Conexión a la api con la URL, metodo y Body corresposdientes
             URL url = new URL(api_url);
             HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
             httpCon.setReadTimeout(10000 /* milliseconds */);
@@ -399,21 +402,26 @@ public class MainActivity extends AppCompatActivity{
 
             out.write(jObjSent);
             out.close();
-
+            //Retornamos InputStream
             return httpCon.getInputStream();
         }
+        //Metodo que devuelve un objeto Amigo recibido de peticion PUT o POST
         private Amigo parseAmigoData(String data) throws IOException, JSONException {
+            //Creamos el JSONObject con el string de la respuesta
             JSONObject amigoObject = new JSONObject(data);
+            //Obtenemos cada uno de sus parametros en String
             String id = amigoObject.getString("id");
             String name = amigoObject.getString(("name"));
             String lon = amigoObject.getString(("longi"));
             String la = amigoObject.getString("lati");
+            //Parseamos los numeros al tipo adecuado
             int ID;
             double longiNumber;
             double latiNumber;
             ID = Integer.parseInt(id);
             longiNumber = Double.parseDouble(lon);
             latiNumber = Double.parseDouble(la);
+            //Retornamos el amigo
             return new Amigo(ID,name,longiNumber,latiNumber);
         }
     }
