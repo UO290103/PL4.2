@@ -78,10 +78,9 @@ public class MainActivity extends AppCompatActivity{
 
         //Centramos el mapa en Europa
         centerMapOnEurope();
+        new ShowAmigosTask().execute(AMIGOS_URL);
         //Obtenemos el nombre del usuario
         askUserName();
-
-
     }
 
     @Override
@@ -179,7 +178,6 @@ public class MainActivity extends AppCompatActivity{
                 // Aseguramos que no se reinicie el flag por error
                 userNameSet = true;
                 Toast.makeText(MainActivity.this,"Tu nombre de usuario es:"+mUser.name,Toast.LENGTH_SHORT).show();
-                new ShowAmigosTask().execute(AMIGOS_URL);
                 // Iniciar el timer solo después de tener el nombre
                 Timer timer = new Timer();
                 timer.scheduleAtFixedRate(new UpdateAmigoPosition(), 0, 5000);
@@ -233,16 +231,7 @@ public class MainActivity extends AppCompatActivity{
         // Comprobar si se puede obtener la posición ahora mismo
         Location location = locationManager.getLastKnownLocation(provider);
         if (location != null) {
-            // La posición actual es location
-            double lati = location.getLatitude();
-            double longi = location.getLongitude();
 
-            // Actualiza la posición del usuario
-            mUser.lati = lati;
-            mUser.longi = longi;
-
-            // Envía la nueva posición al backend
-            new SendLocationTask().execute(AMIGOS_URL);
         } else {
             // Actualmente no se puede obtener la posición
         }
@@ -255,8 +244,8 @@ public class MainActivity extends AppCompatActivity{
             double longi = location.getLongitude();
 
             // Actualiza la posición del usuario
-            mUser.lati = lati;
-            mUser.longi = longi;
+            mUser.lati = longi;
+            mUser.longi = lati;
 
             // Envía la nueva posición al backend
             new SendLocationTask().execute(AMIGOS_URL);
