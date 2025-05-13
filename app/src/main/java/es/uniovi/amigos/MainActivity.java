@@ -71,8 +71,6 @@ public class MainActivity extends AppCompatActivity{
         // Cuando los autorice, Android llamará a la función onRequestPermissionsResult
         // que implementamos más adelante
         requestPermissionsIfNecessary(new String[]{
-                // WRITE_EXTERNAL_STORAGE este permiso es necesario para guardar las imagenes del mapa
-                Manifest.permission.WRITE_EXTERNAL_STORAGE,
                 Manifest.permission.ACCESS_FINE_LOCATION
         });
 
