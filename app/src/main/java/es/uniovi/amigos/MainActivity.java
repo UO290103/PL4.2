@@ -53,6 +53,7 @@ public class MainActivity extends AppCompatActivity{
     //URL estatica dada por ngrok con la que accedemos al servicio API rest de los amigos
     private Amigo mUser = new Amigo(0,"user",0.0,0.0);
     private boolean userNameSet = false;
+    private boolean isUserCreated = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -367,13 +368,15 @@ public class MainActivity extends AppCompatActivity{
         }
         protected InputStream updateAmigo(String URL, Amigo User) throws IOException, JSONException {
             String api_url = URL;
-            String metodo = "POST";
+            String metodo = "PUT";
             JSONObject jsonObject = new JSONObject();
-            if (User.ID != 0) {
+            if (User.ID != 0 && isUserCreated) {
                 jsonObject.put("id", User.ID);
                 String id = String.valueOf(User.ID);
-                metodo = "PUT";
                 api_url = URL + "/" + id;
+            } else if(!isUserCreated){
+                metodo = "POST";
+                isUserCreated = true;
             }
             jsonObject.put("name", User.name);
             jsonObject.put("lati", User.lati.toString());
