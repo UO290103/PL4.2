@@ -52,6 +52,7 @@ public class MainActivity extends AppCompatActivity{
     private String AMIGOS_URL = "https://man-assuring-possibly.ngrok-free.app/api/amigo";
     //URL estatica dada por ngrok con la que accedemos al servicio API rest de los amigos
     private Amigo mUser = new Amigo(0,"user",0.0,0.0);
+    private boolean userNameSet = false;
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -78,7 +79,9 @@ public class MainActivity extends AppCompatActivity{
         //Centramos el mapa en Europa
         centerMapOnEurope();
         //Obtenemos el nombre del usuario
-        new Handler().postDelayed(this::askUserName, 300);
+        askUserName();
+
+
     }
 
     @Override
@@ -157,6 +160,10 @@ public class MainActivity extends AppCompatActivity{
     }
 
     public void askUserName() {
+        if (userNameSet) return;  // ⛔ Ya lo pidió
+
+        userNameSet = true;  // ✅ Marcar como mostrado
+
         AlertDialog.Builder alert = new AlertDialog.Builder(this);
 
         alert.setTitle("Settings");
@@ -168,25 +175,29 @@ public class MainActivity extends AppCompatActivity{
         alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int whichButton) {
                 mUser.name = input.getText().toString();
-                //Obtenemos la lista de amigos como tarea asincrona
+
+                // Aseguramos que no se reinicie el flag por error
+                userNameSet = true;
+                Toast.makeText(MainActivity.this,"Tu nombre de usuario es:"+mUser.name,Toast.LENGTH_SHORT).show();
                 new ShowAmigosTask().execute(AMIGOS_URL);
                 // Iniciar el timer solo después de tener el nombre
                 Timer timer = new Timer();
                 timer.scheduleAtFixedRate(new UpdateAmigoPosition(), 0, 5000);
-                SetupLocation(); // <- también ahora es seguro
+                SetupLocation();
             }
         });
 
         alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int whichButton) {
                 Toast.makeText(MainActivity.this, "Se necesita un nombre de usuario", Toast.LENGTH_SHORT).show();
-                finish(); // O vuelve a pedirlo
+                finish();
             }
         });
 
-        alert.setCancelable(false); // No permitir cerrar el diálogo sin escoger
+        alert.setCancelable(false);
         alert.show();
     }
+
 
 
     void SetupLocation() {
@@ -223,6 +234,15 @@ public class MainActivity extends AppCompatActivity{
         Location location = locationManager.getLastKnownLocation(provider);
         if (location != null) {
             // La posición actual es location
+            double lati = location.getLatitude();
+            double longi = location.getLongitude();
+
+            // Actualiza la posición del usuario
+            mUser.lati = lati;
+            mUser.longi = longi;
+
+            // Envía la nueva posición al backend
+            new SendLocationTask().execute(AMIGOS_URL);
         } else {
             // Actualmente no se puede obtener la posición
         }
@@ -368,8 +388,8 @@ public class MainActivity extends AppCompatActivity{
                 api_url = URL + "/" + id;
             }
             jsonObject.put("name", User.name);
-            jsonObject.put("lati", User.lati);
-            jsonObject.put("longi", User.longi);
+            jsonObject.put("lati", User.lati.toString());
+            jsonObject.put("longi", User.longi.toString());
 
             String jObjSent = jsonObject.toString();
 
