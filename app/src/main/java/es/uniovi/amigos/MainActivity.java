@@ -10,6 +10,7 @@ import android.location.LocationListener;
 import android.location.LocationManager;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
 import android.preference.PreferenceManager;
 import android.widget.EditText;
 import android.widget.Toast;
@@ -50,7 +51,7 @@ public class MainActivity extends AppCompatActivity{
     private List<Amigo> amigos; //Lista donde guardamos la info de los amigos
     private String AMIGOS_URL = "https://man-assuring-possibly.ngrok-free.app/api/amigo";
     //URL estatica dada por ngrok con la que accedemos al servicio API rest de los amigos
-    private String mUserName = null; //Nombre del usuario
+    private Amigo mUser = new Amigo(0,"user",0.0,0.0);
 
     @Override
     public void onCreate(Bundle savedInstanceState) {
@@ -76,15 +77,8 @@ public class MainActivity extends AppCompatActivity{
 
         //Centramos el mapa en Europa
         centerMapOnEurope();
-        //Obtenemos la lista de amigos como tarea asincrona
-        new ShowAmigosTask().execute(AMIGOS_URL);
         //Obtenemos el nombre del usuario
-        askUserName();
-        //Iniciamos un timer para obtener nueva info de la API cada 1 seg
-        Timer timer = new Timer();
-        TimerTask updateAmigos = new UpdateAmigoPosition();
-        timer.scheduleAtFixedRate(updateAmigos,0,1000);
-        setupLocation();
+        new Handler().postDelayed(this::askUserName, 300);
     }
 
     @Override
@@ -168,24 +162,32 @@ public class MainActivity extends AppCompatActivity{
         alert.setTitle("Settings");
         alert.setMessage("User name:");
 
-        // Crear un EditText para obtener el nombre
         final EditText input = new EditText(this);
         alert.setView(input);
 
         alert.setPositiveButton("Ok", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int whichButton) {
-                mUserName = input.getText().toString();
+                mUser.name = input.getText().toString();
+                //Obtenemos la lista de amigos como tarea asincrona
+                new ShowAmigosTask().execute(AMIGOS_URL);
+                // Iniciar el timer solo después de tener el nombre
+                Timer timer = new Timer();
+                timer.scheduleAtFixedRate(new UpdateAmigoPosition(), 0, 5000);
+                SetupLocation(); // <- también ahora es seguro
             }
         });
 
         alert.setNegativeButton("Cancel", new DialogInterface.OnClickListener() {
             public void onClick(DialogInterface dialog, int whichButton) {
-                // Canceled.
+                Toast.makeText(MainActivity.this, "Se necesita un nombre de usuario", Toast.LENGTH_SHORT).show();
+                finish(); // O vuelve a pedirlo
             }
         });
 
+        alert.setCancelable(false); // No permitir cerrar el diálogo sin escoger
         alert.show();
     }
+
 
     void SetupLocation() {
         if (ActivityCompat.checkSelfPermission(this,
@@ -229,12 +231,15 @@ public class MainActivity extends AppCompatActivity{
     class MyLocationListener implements LocationListener {
         @Override
         public void onLocationChanged(Location location) {
-            // Se llama cuando hay una nueva posición para ese location provider
             double lati = location.getLatitude();
             double longi = location.getLongitude();
-            // AQUI HABRA QUE AÑADIR CODIGO MÁS ADELANTE
-            // para actualizar en el backend la posición de este teléfono
-            // ...
+
+            // Actualiza la posición del usuario
+            mUser.lati = lati;
+            mUser.longi = longi;
+
+            // Envía la nueva posición al backend
+            new SendLocationTask().execute(AMIGOS_URL);
         }
 
         // El resto de métodos que debemos implementar los podemos dejar vacíos
@@ -265,7 +270,7 @@ public class MainActivity extends AppCompatActivity{
                 amigos = amigoList;
                 addListToMap(amigos);
             } else {
-                Toast.makeText(MainActivity.this, "Error al actualizar la tasa", Toast.LENGTH_SHORT).show();
+                Toast.makeText(MainActivity.this, "Error al recibir lista amigos", Toast.LENGTH_SHORT).show();
             }
         }
 
@@ -326,15 +331,23 @@ public class MainActivity extends AppCompatActivity{
         }
     }
 
-    class SendLocationTask extends AsyncTask<String, Void, Void>{
+    class SendLocationTask extends AsyncTask<String, Void, Amigo>{
         @Override
-        protected Void doInBackground(String... urls) {
+        protected Amigo doInBackground(String... urls) {
             try {
-                String json = readStream(openUrl(urls[0]));
-                return parseDataFromNetwork(json);
+                String json = readStream(updateAmigo(urls[0],mUser));
+                return parseAmigoData(json);
             } catch (IOException | JSONException e) {
                 e.printStackTrace();
                 return null;
+            }
+        }
+        @Override
+        protected void onPostExecute(Amigo user) {
+            if (user != null) {
+                mUser = user;
+            } else {
+                Toast.makeText(MainActivity.this, "Error al actualizar tu información", Toast.LENGTH_SHORT).show();
             }
         }
         private String readStream(InputStream stream) throws IOException {
@@ -344,9 +357,23 @@ public class MainActivity extends AppCompatActivity{
             while ((line = reader.readLine()) != null) sb.append(line);
             return sb.toString();
         }
-        protected InputStream updateAmigo(String URL, String name, String lati, String longi) throws IOException, JSONException {
+        protected InputStream updateAmigo(String URL, Amigo User) throws IOException, JSONException {
+            String api_url = URL;
+            String metodo = "POST";
+            JSONObject jsonObject = new JSONObject();
+            if (User.ID != 0) {
+                jsonObject.put("id", User.ID);
+                String id = String.valueOf(User.ID);
+                metodo = "PUT";
+                api_url = URL + "/" + id;
+            }
+            jsonObject.put("name", User.name);
+            jsonObject.put("lati", User.lati);
+            jsonObject.put("longi", User.longi);
 
-            URL url = new URL(URL);
+            String jObjSent = jsonObject.toString();
+
+            URL url = new URL(api_url);
             HttpURLConnection httpCon = (HttpURLConnection) url.openConnection();
             httpCon.setReadTimeout(10000 /* milliseconds */);
             httpCon.setConnectTimeout(15000 /* milliseconds */);
@@ -355,15 +382,28 @@ public class MainActivity extends AppCompatActivity{
             httpCon.setDoInput(true);
             httpCon.setRequestProperty("Content-Type","application/JSON");
 
-            httpCon.setRequestMethod("PUT");
+            httpCon.setRequestMethod(metodo);
             OutputStreamWriter out = new OutputStreamWriter(
                     httpCon.getOutputStream());
 
-            String jObjSent="{\"name\":\""+name+"\",\"lati\":\""+lati+"\",\"longi\":\""+longi+"\"}";
             out.write(jObjSent);
             out.close();
 
             return httpCon.getInputStream();
+        }
+        private Amigo parseAmigoData(String data) throws IOException, JSONException {
+            JSONObject amigoObject = new JSONObject(data);
+            String id = amigoObject.getString("id");
+            String name = amigoObject.getString(("name"));
+            String lon = amigoObject.getString(("longi"));
+            String la = amigoObject.getString("lati");
+            int ID;
+            double longiNumber;
+            double latiNumber;
+            ID = Integer.parseInt(id);
+            longiNumber = Double.parseDouble(lon);
+            latiNumber = Double.parseDouble(la);
+            return new Amigo(ID,name,longiNumber,latiNumber);
         }
     }
 }
