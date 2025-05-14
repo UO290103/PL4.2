@@ -83,7 +83,8 @@ public class MainActivity extends AppCompatActivity{
         askUserName();
         //Iniciamos timer para el polling
         Timer timer = new Timer();
-        timer.scheduleAtFixedRate(new UpdateAmigoPosition(), 0, 5000);
+        UpdateAmigoPosition UpdateAmigos = new UpdateAmigoPosition();
+        timer.scheduleAtFixedRate(UpdateAmigos, 0, 5000);
     }
 
     @Override
