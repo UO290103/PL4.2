@@ -81,7 +81,7 @@ public class MainActivity extends AppCompatActivity{
         new ShowAmigosTask().execute(AMIGOS_URL);
         //Obtenemos el nombre del usuario
         askUserName();
-        //Iniciamos timer para el polling
+        //Iniciamos timer para el polling a
         Timer timer = new Timer();
         UpdateAmigoPosition UpdateAmigos = new UpdateAmigoPosition();
         timer.scheduleAtFixedRate(UpdateAmigos, 0, 5000);
